@@ -2,7 +2,7 @@
 
 **sEMG-based silent speech recognition using frozen large language models**
 
-**---AML Lab Project at the EEE Department, Imperial College London**
+**--->(AML Lab Project at the EEE Department, Imperial College London)**
 
 An end-to-end system that decodes unvoiced speech from surface electromyography (sEMG) signals using a lightweight convolutional–recurrent adaptor paired with a frozen LLM. Built with consumer-grade hardware at ~20% of the cost of research-grade setups.
 
