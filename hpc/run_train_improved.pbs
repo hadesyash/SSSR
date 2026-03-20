@@ -1,0 +1,73 @@
+#!/bin/bash
+#PBS -N improved_llama3b
+#PBS -l select=1:ncpus=8:mem=64gb:ngpus=1:gpu_type=L40S
+#PBS -l walltime=48:00:00
+#PBS -o /rds/general/user/yma25/home/aml_lab/hpc/logs/improved_train.out
+#PBS -e /rds/general/user/yma25/home/aml_lab/hpc/logs/improved_train.err
+
+##############################################################################
+# SilentSpeechLLM — IMPROVED LLaMA-3B adaptor training
+#
+# SUBMIT:
+#   qsub ~/aml_lab/hpc/run_train_improved.pbs
+#
+# MONITOR (live):
+#   tail -f ~/aml_lab/hpc/logs/improved_live.log
+##############################################################################
+
+PROJECT_DIR="/rds/general/user/yma25/home/aml_lab"
+LIVE_LOG="$PROJECT_DIR/hpc/logs/improved_live.log"
+
+cd "$PROJECT_DIR" || exit 1
+
+module load CUDA/12.1.1
+
+source "$HOME/miniforge3/etc/profile.d/conda.sh"
+conda activate emg_llm
+
+export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
+
+# ---- Diagnostics ----
+echo "============================================"
+echo "Job ID:    $PBS_JOBID"
+echo "Node:      $(hostname)"
+echo "Date:      $(date)"
+echo "Python:    $(which python)"
+echo "============================================"
+
+python -c "
+import sys; print(f'Python: {sys.version}')
+import torch; print(f'PyTorch: {torch.__version__}')
+print(f'CUDA: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'GPU: {torch.cuda.get_device_name(0)}')
+    print(f'Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
+import transformers; print(f'Transformers: {transformers.__version__}')
+" 2>&1
+
+echo "============================================"
+echo "Starting IMPROVED training at $(date)"
+echo "Live log: $LIVE_LOG"
+echo "============================================"
+
+python "$PROJECT_DIR/hpc/train_hc_llama3b_improved.py" \
+    --hc_features_dir "$PROJECT_DIR/data/extracted_emg_features" \
+    --json_path "$PROJECT_DIR/data/10_selected_samples.json" \
+    --llm_path "meta-llama/Llama-3.2-3B-Instruct" \
+    --checkpoint_dir "$PROJECT_DIR/checkpoints/improved_llama3b" \
+    --num_epochs 500 \
+    --batch_size 8 \
+    --lr 1e-4 \
+    --dropout 0.15 \
+    --label_smoothing 0.1 \
+    --noise_std 0.02 \
+    --use_prompts_at_inference 1 \
+    --eval_every 10 \
+    --save_every 50 \
+    --log_file "$LIVE_LOG" \
+    2>&1
+
+echo "============================================"
+echo "Exit code: $?"
+echo "Training complete at $(date)"
+echo "============================================"

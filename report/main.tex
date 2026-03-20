@@ -1,0 +1,97 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[left=2.5cm,top=3cm,right=2.5cm,bottom=3cm]{geometry}
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{amssymb}
+\usepackage{amsmath}
+% ========= Fix for long URLs breaking out of page =========
+\PassOptionsToPackage{hyphens}{url}
+\usepackage{url}
+\usepackage[hyphens]{hyperref}
+\hypersetup{breaklinks=true}
+%Figures
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[table]{xcolor}
+\usepackage{longtable}
+%Tables
+\usepackage{booktabs}
+%Bold in tables
+\newcommand{\bftab}{\fontseries{b}\selectfont}
+\newsavebox\CBox
+\def\textBF#1{\sbox\CBox{#1}\resizebox{\wd\CBox}{\ht\CBox}{\textbf{#1}}}
+%dashed line
+\usepackage{array}
+\usepackage{arydshln}
+\setlength\dashlinedash{0.2pt}
+\setlength\dashlinegap{1.5pt}
+\setlength\arrayrulewidth{0.3pt}
+% symbols
+\newcommand{\Lagr}{\mathcal{L}}
+\usepackage{gensymb} % degree
+%Includes "References" in the table of contents
+\usepackage[nottoc]{tocbibind}
+% Harvard citation style
+\usepackage{natbib}
+% KM comment macro
+\newcommand{\km}[1]{
+{\color{green}{KM: \it{[#1]}}}
+}
+\usepackage{multicol}
+\begin{document}
+\begin{titlepage}
+    \begin{center}
+        % Imperial logo (put the correct file name here)
+        \includegraphics[width=0.45\textwidth]{imperial_logo.png}\\[2cm]
+        {\Large \textsc{Laboratory in Applied Machine Learning}}\\[0.6cm]
+        {\large \textsc{Imperial College London}}\\[0.3cm]
+        {\large \textsc{Department of Electrical and Electronic Engineering}}\\[1.2cm]
+        \rule{\textwidth}{0.4pt}\\[0.5cm]
+        {\LARGE \textbf{sEMG-Based Smart Silent Speech Reader (SSSR)}}\\[0.3cm]
+        {\large Final Report}\\[0.5cm]
+        \rule{\textwidth}{0.4pt}\\[2cm]
+    \end{center}
+    \vspace{0.5cm}
+    \begin{minipage}{0.45\textwidth}
+        \begin{flushleft} \large
+            \textit{Authors:}\\
+            Yash M Agarwal\\
+            Ivan Plakhotnyk\\
+            Dorijan Donaj Maga\v{s}i\'{c}
+        \end{flushleft}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.45\textwidth}
+        \begin{flushright} \large
+            \textit{Supervisors:}\\
+            Prof.\ Krystian Mikolajczyk\\
+            Dr.\ Yassir Jedra\\
+            Dr.\ Abd Al Rahman Abu Ebayyeh\\
+        \end{flushright}
+    \end{minipage}
+    \vfill
+    \begin{center}
+        {\large March 2026}
+    \end{center}
+\end{titlepage}
+\begin{abstract}
+Silent speech interfaces (SSIs) enable communication by decoding facial muscle activity during unvoiced articulation, offering a lifeline for individuals unable to vocalise. However, existing systems typically rely on research-grade electrode arrays that are prohibitively expensive for practical deployment. We present the Smart Silent Speech Reader (SSSR), a consumer-grade sEMG-to-text system built around four MyoWare~2.0 sensors and an Arduino Uno~R4 at approximately one-fifth the cost of the Gaddy \& Klein benchmark setup. Our pipeline pairs a lightweight convolutional--recurrent adaptor (1.8--10.1\,M parameters) with a frozen large language model (LLM) to decode unvoiced EMG into text. A systematic comparison of eight frozen LLMs reveals that Gemma-2-2b-it achieves 0.3285 WER on the Gaddy closed-vocabulary benchmark; a 33\% relative improvement over the prior state of the art (0.49 WER with LLaMA-3.2-3B). A nine-stage ablation study across four LLMs identifies prompt-consistent inference, output layer normalisation, and dropout as universally beneficial, while showing that the optimal training recipe is LLM-specific. We further demonstrate that performance degrades approximately linearly from eight to three EMG channels, with even our three-channel configuration outperforming the prior eight-channel baseline. Finally, on a custom 10-word phonetically distinct vocabulary, three channels and 250 training samples suffice to reach 92\% word accuracy. These results show that affordable, low-channel-count hardware combined with an appropriate frozen LLM can deliver competitive silent speech recognition without research-grade equipment.
+\end{abstract}
+
+\pagebreak
+\tableofcontents
+\pagebreak
+\input{sections/1-introduction}
+\input{sections/2-literature_review}
+\input{sections/3-planning}
+\input{sections/4-hardware}
+\input{sections/5-data_collection}
+\input{sections/6-software_pipeline}
+\input{sections/7-results}
+\input{sections/8-novelties}
+\clearpage
+% Harvard references (agsm style)
+\bibliographystyle{agsm}
+\bibliography{ref}
+\end{document}

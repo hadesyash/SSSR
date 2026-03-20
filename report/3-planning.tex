@@ -1,0 +1,39 @@
+\section{Planning \& Collaboration}
+
+The development of the Smart Silent Speech Reader (SSSR) system was divided into two parallel workstreams---Hardware Setup and Software Setup---whose timeline is shown in Figure~\ref{fig:gantt}. The project ran throughout the Spring term (January--March 2026), with an additional two-week buffer before the demonstration to repeat experiments, retrain models, or resolve hardware issues.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=\textwidth]{figures/image1.png}
+    \caption{Gantt chart outlining the planned development schedule for the SSSR system.}
+    \label{fig:gantt}
+\end{figure}
+
+\subsection{Hardware Setup (Weeks 1--5)}
+
+This workstream established a reliable multi-channel EMG acquisition system using the Arduino Uno R4 and MyoWare 2.0 sensors.
+
+\begin{itemize}
+    \item \textbf{Component preparation (Week 1).} Hardware was purchased and the UNO R4 platform was explored to understand its ADC and DMA capabilities.
+    \item \textbf{Sampling and transfer tests (Weeks 2--3).} We verify stable sampling and USB data transfer.
+    \item \textbf{System assembly (Week 4).} Sensors were mounted and tested.
+    \item \textbf{Experiment protocol (Weeks 5).} A standardised procedure for electrode placement, repetitions, session structure were finalised.
+    \item \textbf{First data collection (Weeks 5).} Initial EMG recordings of isolated words and phrases were gathered for quality assessment and model development.
+\end{itemize}
+
+\subsection{Software Setup (Weeks 3--10)}
+
+Software development proceeded in parallel with hardware work.
+
+\begin{itemize}
+    \item \textbf{LLM familiarisation (Weeks 3-4).} We studied the use of input embeddings, tokenisers, and LLaMA frozen-model.
+    \item \textbf{Data quality assessment (Weeks 5--6).} Recorded EMG was analysed and we decided if we need to repeat the experiment.
+    \item \textbf{Adaptor implementation (Weeks 6).} Baseline adaptors were built to project EMG into the LLM embedding space.
+    \item \textbf{Adaptor--LLM integration (Weeks 7).} EMG embeddings were combined with prompt embeddings and validated.
+    \item \textbf{Training and evaluation (Weeks 8).} The adaptor was trained using cross-entropy loss and was evaluated.
+    \item \textbf{Revision and adjustment (Weeks 9).} Depending on results, we would have recollected the data, or refined preprocessing.
+\end{itemize}
+
+\subsection{Final Integration and Demonstration (Weeks 9--10)}
+
+The last phase focused on real-time pipeline implementation and preparing for the demo. We were going to try to make systems that are scalable and easy to interface with. With this design, if the results are unsatisfactory, we would have been able to add more sensors and collect more data without significant changes to the setup. We also explored other methods that we might discover in the future. We have also completed the final project report during this period, writing it in parallel with the system development to ensure that documentation evolves alongside our technical progress.

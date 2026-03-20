@@ -1,0 +1,152 @@
+#!/bin/bash
+#PBS -l walltime=72:00:00
+#PBS -l select=1:ncpus=8:mem=64gb:ngpus=1:gpu_type=L40S
+#PBS -N gaddy_bench
+#PBS -J 0-2
+#PBS -o /rds/general/user/yma25/home/aml_lab/hpc/logs/gaddy_bench.out
+#PBS -e /rds/general/user/yma25/home/aml_lab/hpc/logs/gaddy_bench.err
+
+# =============================================================================
+# 3 Parallel Gaddy Benchmark Runs (PBS Job Array)
+#   Job 0: 8-channel (112 features) — full Gaddy baseline
+#   Job 1: 4-channel (56 features)  — best 4 channels
+#   Job 2: 3-channel (42 features)  — best 3 channels (matches personal EMG)
+#
+# All use model_size=384 and same hyperparams as personal 3ch experiments
+# for fair comparison. Only variable: channel count.
+#
+# SUBMIT:   qsub ~/aml_lab/hpc/run_gaddy_benchmarks.pbs
+# MONITOR:  tail -f ~/aml_lab/hpc/logs/gaddy_bench_*_live.log
+# =============================================================================
+
+cd $HOME/aml_lab
+module load CUDA/12.1.1
+
+source "$HOME/miniforge3/etc/profile.d/conda.sh"
+conda activate emg_llm
+
+export HF_HOME=$HOME/.cache/huggingface
+export TRANSFORMERS_CACHE=$HOME/.cache/huggingface
+
+PROJECT_DIR="$HOME/aml_lab"
+TRAIN_SCRIPT="hpc/train_hc_llama3b_improved.py"
+EXTRACT_SCRIPT="hpc/extract_nch_features.py"
+LLM_PATH="google/gemma-2-2b-it"
+SPLIT_JSON="$PROJECT_DIR/data/10_selected_samples.json"
+LOG_DIR="hpc/logs"
+CKPT_BASE="checkpoints/gaddy_bench"
+
+mkdir -p $LOG_DIR
+mkdir -p $CKPT_BASE
+
+echo "============================================================"
+echo "  Gaddy Benchmark — Array Index: $PBS_ARRAY_INDEX"
+echo "  Job ID: $PBS_JOBID"
+echo "  Node: $(hostname)"
+echo "  Date: $(date)"
+echo "============================================================"
+
+python -c "
+import sys; print(f'Python: {sys.version}')
+import torch; print(f'PyTorch: {torch.__version__}')
+print(f'CUDA: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'GPU: {torch.cuda.get_device_name(0)}')
+" 2>&1
+
+# ---------------------------------------------------------------
+# Configure based on array index
+# ---------------------------------------------------------------
+case $PBS_ARRAY_INDEX in
+    0)
+        LABEL="8ch"
+        NUM_FEATURES=112
+        DATA_DIR="$PROJECT_DIR/data/extracted_emg_features"
+        ;;
+    1)
+        LABEL="4ch"
+        NUM_FEATURES=56
+        DATA_DIR="$PROJECT_DIR/data/extracted_emg_features_4ch"
+
+        # Extract 4ch features if not already done
+        if [ ! -d "$DATA_DIR" ] || [ $(ls "$DATA_DIR"/*.npy 2>/dev/null | wc -l) -eq 0 ]; then
+            echo ""
+            echo "  Extracting best 4 channels from 8ch data..."
+            python "$PROJECT_DIR/$EXTRACT_SCRIPT" \
+                --input_dir "$PROJECT_DIR/data/extracted_emg_features" \
+                --output_dir "$DATA_DIR" \
+                --top_n 4 \
+                2>&1
+
+            if [ $? -ne 0 ]; then
+                echo "ERROR: 4ch feature extraction failed"
+                exit 1
+            fi
+        else
+            echo "  4ch features already exist at $DATA_DIR"
+        fi
+        ;;
+    2)
+        LABEL="3ch"
+        NUM_FEATURES=42
+        DATA_DIR="$PROJECT_DIR/data/extracted_emg_features_3ch"
+
+        # Extract 3ch features if not already done
+        if [ ! -d "$DATA_DIR" ] || [ $(ls "$DATA_DIR"/*.npy 2>/dev/null | wc -l) -eq 0 ]; then
+            echo ""
+            echo "  Extracting best 3 channels from 8ch data..."
+            python "$PROJECT_DIR/$EXTRACT_SCRIPT" \
+                --input_dir "$PROJECT_DIR/data/extracted_emg_features" \
+                --output_dir "$DATA_DIR" \
+                --top_n 3 \
+                2>&1
+
+            if [ $? -ne 0 ]; then
+                echo "ERROR: 3ch feature extraction failed"
+                exit 1
+            fi
+        else
+            echo "  3ch features already exist at $DATA_DIR"
+        fi
+        ;;
+esac
+
+CKPT_DIR="${CKPT_BASE}/${LABEL}_ms384"
+LOG_FILE="${LOG_DIR}/gaddy_bench_${LABEL}_ms384_live.log"
+mkdir -p $CKPT_DIR
+
+echo ""
+echo "============================================================"
+echo "  Training: Gaddy ${LABEL} | model_size=384"
+echo "  Data: $DATA_DIR"
+echo "  Features: $NUM_FEATURES"
+echo "  Checkpoint: $CKPT_DIR"
+echo "  Log: $LOG_FILE"
+echo "============================================================"
+
+python $TRAIN_SCRIPT \
+    --hc_features_dir "$DATA_DIR" \
+    --json_path "$SPLIT_JSON" \
+    --llm_path $LLM_PATH \
+    --num_features $NUM_FEATURES \
+    --model_size 384 \
+    --llm_hidden 0 \
+    --checkpoint_dir $CKPT_DIR \
+    --num_epochs 2000 \
+    --batch_size 8 \
+    --lr 5e-5 \
+    --dropout 0.20 \
+    --noise_std 0.05 \
+    --label_smoothing 0.1 \
+    --use_prompts_at_inference 1 \
+    --eval_every 10 \
+    --save_every 100 \
+    --log_file $LOG_FILE \
+    2>&1
+
+echo ""
+echo "============================================================"
+echo "  DONE: Gaddy ${LABEL} ms384"
+echo "  Exit code: $?"
+echo "  Completed at $(date)"
+echo "============================================================"

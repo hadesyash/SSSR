@@ -1,0 +1,18 @@
+\section{Data Collection Interface}
+
+To streamline the recording process and ensure consistency across sessions, we developed a portable HTML-based interface for phrase generation and presentation. The core workflow is simple: the participant places the sEMG sensors on their face and then silently mouths the words or phrases displayed on screen, without vocalising. The interface generates script-driven random prompts from a closed vocabulary and presents them one at a time, advancing either automatically on a timer or manually at the participant's pace.
+
+The session configuration panel exposes several adjustable parameters, including the total number of utterances, a countdown delay before each prompt, the mouthing duration (how long the phrase stays on screen), and the rest interval between prompts. A start index field allows a session to be resumed partway through if recording is interrupted. The interface also supports keyboard shortcuts for pausing, repeating, skipping, and ending a session, which proved useful for maintaining a natural recording flow without needing to reach for on-screen controls.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/image5.png}
+    \caption{Data Collection Interface, showing several adjustable parameters and phrase generator screen.}
+    \label{fig:data_collection_interface}
+\end{figure}
+
+We conducted two separate data collection trials, each targeting a different vocabulary design. The first trial followed the closed-vocabulary date-and-time paradigm used by \citet{gaddy2021}, drawing from 67 unique words spanning times (e.g.\ ``08:33 PM''), weekday-dates (e.g.\ ``Friday June 11''), and date-years (e.g.\ ``September 12 2013''). This produced four phrase types --- times with and without AM/PM markers, weekday-month-date combinations, and month-date-year combinations --- recorded across two sessions totalling 438 utterances, with a roughly balanced split of 236 and 202 utterances per session. The phrase distribution was weighted toward weekday-month-date combinations (227 of 438), reflecting the larger number of possible permutations in that category.
+
+The second trial shifted to a single-word vocabulary of 10 phonetically diverse fruit and vegetable names --- pomegranate, dragonfruit, mangosteen, guava, cranberry, sprouts, artichoke, cauliflower, asparagus, and zucchini --- chosen to maximise articulatory difference across the sEMG channels. This trial ran for three sessions producing 757 utterances in total (251, 250, and 256 per session), with all 10 words uttered approximately equally at around 76 repetitions each. The balanced distribution was enforced by the script's randomisation logic to ensure each word class received sufficient representation for downstream classification.
+
+In both trials, each per-phrase EMG recording was saved as a separate CSV file, preserving the alignment between the displayed prompt and the corresponding muscle activity signal. This structure simplifies later preprocessing, as each file maps directly to a single labelled utterance.

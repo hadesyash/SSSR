@@ -1,0 +1,375 @@
+#!/bin/bash
+#PBS -N fixed_norm_exp
+#PBS -l select=1:ncpus=8:mem=64gb:ngpus=1:gpu_type=L40S
+#PBS -l walltime=48:00:00
+#PBS -o /rds/general/user/yma25/home/aml_lab/hpc/logs/fixed_norm_exp.out
+#PBS -e /rds/general/user/yma25/home/aml_lab/hpc/logs/fixed_norm_exp.err
+
+##############################################################################
+# SilentSpeechLLM — Fixed Normalization Experiments
+#
+# Fixes applied:
+#   1. Per-sample STFT pre-normalization (equalize amplitude before global norm)
+#   2. Robust normalization (median/IQR instead of mean/std)
+#   3. Clipping to [-5, 5] (matches Gaddy feature range)
+#
+# Pipeline:
+#   Step 1: Convert combined training data (438 samples) with fixes
+#   Step 2: Convert test data (50 samples) using training norm stats
+#   Step 3: Zero-shot (Gaddy 4ch checkpoint → personal data)
+#   Step 4: Fine-tune (Gaddy 4ch checkpoint → personal data, 500 epochs)
+#   Step 5: From scratch (new adaptor, 2000 epochs)
+#   Step 6: Evaluate best models on test set (50 i_test_unvoiced samples)
+#
+# Comparison: Gaddy 4ch Gemma-2B best = WER 0.4088, CER 0.2077
+##############################################################################
+
+PROJECT_DIR="/rds/general/user/yma25/home/aml_lab"
+
+cd "$PROJECT_DIR" || exit 1
+
+# Ensure log directory exists
+mkdir -p "$PROJECT_DIR/hpc/logs"
+
+module load CUDA/12.1.1
+
+source "$HOME/miniforge3/etc/profile.d/conda.sh" 2>/dev/null || \
+source "$HOME/miniconda3/etc/profile.d/conda.sh" 2>/dev/null
+conda activate emg_llm
+
+export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
+
+echo "============================================"
+echo "Fixed Normalization Experiments"
+echo "Job ID:    $PBS_JOBID"
+echo "Node:      $(hostname)"
+echo "Date:      $(date)"
+echo "============================================"
+
+python -c "
+import sys; print(f'Python: {sys.version}')
+import torch; print(f'PyTorch: {torch.__version__}')
+print(f'CUDA: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'GPU: {torch.cuda.get_device_name(0)}')
+    print(f'Memory: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB')
+" 2>&1
+
+# Directories
+TRAIN_OUT="$PROJECT_DIR/data/combined_emg_features_v2"
+TEST_OUT="$PROJECT_DIR/data/test_emg_features_v2"
+GADDY_CKPT="$PROJECT_DIR/checkpoints/4ch_gemma2b/best_transNet.pth"
+
+# =========================================================================
+# STEP 1: Convert combined training data (438 samples) with all fixes
+# =========================================================================
+echo ""
+echo "============================================"
+echo "Step 1: Convert combined data with fixes"
+echo "  --stft_prenorm --robust_norm --clip 5.0"
+echo "============================================"
+
+python "$PROJECT_DIR/hpc/convert_my_emg.py" \
+    --input_dirs "$PROJECT_DIR/i_unvoiced_1" "$PROJECT_DIR/d_unvoiced_1" \
+    --dataset_prefixes i d \
+    --output_dir "$TRAIN_OUT" \
+    --normalize \
+    --robust_norm \
+    --stft_prenorm \
+    --clip 5.0 \
+    --mains_freq 50 \
+    --target_sr 516.79 \
+    --pad_to 56 \
+    --dev_ratio 0.1 \
+    --seed 42 \
+    2>&1
+
+echo "  Train features: $(ls -1 $TRAIN_OUT/*_silent.npy 2>/dev/null | wc -l) files"
+
+# Step 1b: Convert text labels from spoken to Gaddy format
+# (training data is "eight thirty three pm" but test is "08:33 PM")
+echo ""
+echo "  Converting text labels to Gaddy format..."
+python "$PROJECT_DIR/hpc/convert_text_format.py" \
+    --features_dir "$TRAIN_OUT" \
+    2>&1
+
+# Quick sanity check
+python -c "
+import numpy as np, json, glob, os
+d = '$TRAIN_OUT'
+files = sorted(glob.glob(os.path.join(d, '*_silent.npy')))
+if files:
+    all_vals = np.concatenate([np.load(f) for f in files], axis=0)
+    print(f'  All features: shape={all_vals.shape}')
+    print(f'    mean={all_vals.mean():.4f}, std={all_vals.std():.4f}')
+    print(f'    range=[{all_vals.min():.4f}, {all_vals.max():.4f}]')
+    # Check outliers
+    n_outside = np.sum(np.abs(all_vals) > 5.0)
+    print(f'    Values outside [-5, 5]: {n_outside} (should be 0)')
+with open(os.path.join(d, 'split.json')) as f:
+    s = json.load(f)
+print(f'  Split: train={s[\"train_samples\"]}, dev={s[\"dev_samples\"]}')
+" 2>&1
+
+# =========================================================================
+# STEP 2: Convert test data (50 samples) using training norm stats
+# =========================================================================
+echo ""
+echo "============================================"
+echo "Step 2: Convert test data (50 i_test_unvoiced)"
+echo "  Using training norm stats for consistency"
+echo "============================================"
+
+python "$PROJECT_DIR/hpc/convert_my_emg.py" \
+    --input_dir "$PROJECT_DIR/i_test_unvoiced" \
+    --output_dir "$TEST_OUT" \
+    --normalize \
+    --robust_norm \
+    --stft_prenorm \
+    --clip 5.0 \
+    --norm_stats_file "$TRAIN_OUT/norm_stats.json" \
+    --mains_freq 50 \
+    --target_sr 516.79 \
+    --pad_to 56 \
+    --test_mode \
+    --seed 42 \
+    2>&1
+
+echo "  Test features: $(ls -1 $TEST_OUT/*_silent.npy 2>/dev/null | wc -l) files"
+
+# Sanity check test
+python -c "
+import numpy as np, glob, os
+d = '$TEST_OUT'
+files = sorted(glob.glob(os.path.join(d, '*_silent.npy')))
+if files:
+    all_vals = np.concatenate([np.load(f) for f in files], axis=0)
+    print(f'  Test features: {len(files)} files, shape per sample={np.load(files[0]).shape}')
+    print(f'    mean={all_vals.mean():.4f}, std={all_vals.std():.4f}')
+    print(f'    range=[{all_vals.min():.4f}, {all_vals.max():.4f}]')
+    n_outside = np.sum(np.abs(all_vals) > 5.0)
+    print(f'    Values outside [-5, 5]: {n_outside}')
+" 2>&1
+
+# =========================================================================
+# STEP 3: Zero-shot (Gaddy 4ch checkpoint on personal data)
+# =========================================================================
+echo ""
+echo "============================================"
+echo "Exp A: Zero-shot (Gaddy 4ch → personal data)"
+echo "  1 epoch, lr=1e-10 (eval only)"
+echo "============================================"
+
+python "$PROJECT_DIR/hpc/train_hc_llama3b_improved.py" \
+    --hc_features_dir "$TRAIN_OUT" \
+    --json_path "$TRAIN_OUT/split.json" \
+    --llm_path "google/gemma-2-2b-it" \
+    --model_size 768 \
+    --num_features 56 \
+    --checkpoint_dir "$PROJECT_DIR/checkpoints/v2_zeroshot" \
+    --resume_from "$GADDY_CKPT" \
+    --num_epochs 1 \
+    --batch_size 8 \
+    --lr 1e-10 \
+    --dropout 0.0 \
+    --label_smoothing 0.0 \
+    --noise_std 0.0 \
+    --use_prompts_at_inference 1 \
+    --eval_every 1 \
+    --save_every 1 \
+    --log_file "$PROJECT_DIR/hpc/logs/v2_zeroshot_live.log" \
+    2>&1
+
+echo "  Done. Log: hpc/logs/v2_zeroshot_live.log"
+
+# =========================================================================
+# STEP 4: Fine-tune (Gaddy 4ch → personal data, 500 epochs)
+# =========================================================================
+echo ""
+echo "============================================"
+echo "Exp B: Fine-tune (Gaddy 4ch → personal data)"
+echo "  500 epochs, lr=5e-5"
+echo "============================================"
+
+python "$PROJECT_DIR/hpc/train_hc_llama3b_improved.py" \
+    --hc_features_dir "$TRAIN_OUT" \
+    --json_path "$TRAIN_OUT/split.json" \
+    --llm_path "google/gemma-2-2b-it" \
+    --model_size 768 \
+    --num_features 56 \
+    --checkpoint_dir "$PROJECT_DIR/checkpoints/v2_finetune" \
+    --resume_from "$GADDY_CKPT" \
+    --num_epochs 500 \
+    --batch_size 8 \
+    --lr 5e-5 \
+    --dropout 0.15 \
+    --label_smoothing 0.1 \
+    --noise_std 0.02 \
+    --use_prompts_at_inference 1 \
+    --eval_every 10 \
+    --save_every 50 \
+    --log_file "$PROJECT_DIR/hpc/logs/v2_finetune_live.log" \
+    2>&1
+
+echo "  Done. Log: hpc/logs/v2_finetune_live.log"
+
+# =========================================================================
+# STEP 5: From scratch (new adaptor, 2000 epochs)
+# =========================================================================
+echo ""
+echo "============================================"
+echo "Exp C: From scratch (user's data only)"
+echo "  2000 epochs, lr=5e-5, dropout=0.25"
+echo "============================================"
+
+python "$PROJECT_DIR/hpc/train_hc_llama3b_improved.py" \
+    --hc_features_dir "$TRAIN_OUT" \
+    --json_path "$TRAIN_OUT/split.json" \
+    --llm_path "google/gemma-2-2b-it" \
+    --model_size 768 \
+    --num_features 56 \
+    --checkpoint_dir "$PROJECT_DIR/checkpoints/v2_scratch" \
+    --num_epochs 2000 \
+    --batch_size 8 \
+    --lr 5e-5 \
+    --dropout 0.25 \
+    --label_smoothing 0.1 \
+    --noise_std 0.05 \
+    --use_prompts_at_inference 1 \
+    --eval_every 25 \
+    --save_every 100 \
+    --log_file "$PROJECT_DIR/hpc/logs/v2_scratch_live.log" \
+    2>&1
+
+echo "  Done. Log: hpc/logs/v2_scratch_live.log"
+
+# =========================================================================
+# STEP 6: Evaluate on test set (50 i_test_unvoiced samples)
+# =========================================================================
+echo ""
+echo "============================================"
+echo "Step 6: Evaluate on 50 test samples"
+echo "============================================"
+
+# 6A: Gaddy 4ch model on personal test
+echo ""
+echo "--- 6A: Gaddy 4ch model on personal test ---"
+if [ -f "$GADDY_CKPT" ]; then
+    python "$PROJECT_DIR/hpc/train_hc_llama3b_improved.py" \
+        --hc_features_dir "$TEST_OUT" \
+        --json_path "$TEST_OUT/split.json" \
+        --llm_path "google/gemma-2-2b-it" \
+        --model_size 768 \
+        --num_features 56 \
+        --checkpoint_dir "$PROJECT_DIR/checkpoints/v2_test_gaddy" \
+        --resume_from "$GADDY_CKPT" \
+        --num_epochs 1 \
+        --batch_size 8 \
+        --lr 1e-10 \
+        --dropout 0.0 \
+        --label_smoothing 0.0 \
+        --noise_std 0.0 \
+        --use_prompts_at_inference 1 \
+        --eval_every 1 \
+        --save_every 1 \
+        --log_file "$PROJECT_DIR/hpc/logs/v2_test_gaddy_live.log" \
+        2>&1
+    echo "  Done. See: hpc/logs/v2_test_gaddy_live.log"
+else
+    echo "  SKIPPED: Gaddy checkpoint not found"
+fi
+
+# 6B: Fine-tuned model on personal test
+V2_FT_CKPT="$PROJECT_DIR/checkpoints/v2_finetune/best_transNet.pth"
+echo ""
+echo "--- 6B: Fine-tuned v2 model on personal test ---"
+if [ -f "$V2_FT_CKPT" ]; then
+    python "$PROJECT_DIR/hpc/train_hc_llama3b_improved.py" \
+        --hc_features_dir "$TEST_OUT" \
+        --json_path "$TEST_OUT/split.json" \
+        --llm_path "google/gemma-2-2b-it" \
+        --model_size 768 \
+        --num_features 56 \
+        --checkpoint_dir "$PROJECT_DIR/checkpoints/v2_test_finetune" \
+        --resume_from "$V2_FT_CKPT" \
+        --num_epochs 1 \
+        --batch_size 8 \
+        --lr 1e-10 \
+        --dropout 0.0 \
+        --label_smoothing 0.0 \
+        --noise_std 0.0 \
+        --use_prompts_at_inference 1 \
+        --eval_every 1 \
+        --save_every 1 \
+        --log_file "$PROJECT_DIR/hpc/logs/v2_test_finetune_live.log" \
+        2>&1
+    echo "  Done. See: hpc/logs/v2_test_finetune_live.log"
+else
+    echo "  SKIPPED: Fine-tune checkpoint not found"
+fi
+
+# 6C: From-scratch model on personal test
+V2_SC_CKPT="$PROJECT_DIR/checkpoints/v2_scratch/best_transNet.pth"
+echo ""
+echo "--- 6C: From-scratch v2 model on personal test ---"
+if [ -f "$V2_SC_CKPT" ]; then
+    python "$PROJECT_DIR/hpc/train_hc_llama3b_improved.py" \
+        --hc_features_dir "$TEST_OUT" \
+        --json_path "$TEST_OUT/split.json" \
+        --llm_path "google/gemma-2-2b-it" \
+        --model_size 768 \
+        --num_features 56 \
+        --checkpoint_dir "$PROJECT_DIR/checkpoints/v2_test_scratch" \
+        --resume_from "$V2_SC_CKPT" \
+        --num_epochs 1 \
+        --batch_size 8 \
+        --lr 1e-10 \
+        --dropout 0.0 \
+        --label_smoothing 0.0 \
+        --noise_std 0.0 \
+        --use_prompts_at_inference 1 \
+        --eval_every 1 \
+        --save_every 1 \
+        --log_file "$PROJECT_DIR/hpc/logs/v2_test_scratch_live.log" \
+        2>&1
+    echo "  Done. See: hpc/logs/v2_test_scratch_live.log"
+else
+    echo "  SKIPPED: From-scratch checkpoint not found"
+fi
+
+# =========================================================================
+# SUMMARY
+# =========================================================================
+echo ""
+echo "============================================"
+echo "ALL EXPERIMENTS COMPLETE"
+echo "============================================"
+echo ""
+echo "Training logs:"
+echo "  A) Zero-shot:    hpc/logs/v2_zeroshot_live.log"
+echo "  B) Fine-tune:    hpc/logs/v2_finetune_live.log"
+echo "  C) From scratch: hpc/logs/v2_scratch_live.log"
+echo ""
+echo "Test logs:"
+echo "  6A) Gaddy 4ch:   hpc/logs/v2_test_gaddy_live.log"
+echo "  6B) Fine-tune:   hpc/logs/v2_test_finetune_live.log"
+echo "  6C) From scratch:hpc/logs/v2_test_scratch_live.log"
+echo ""
+echo "Comparison target: Gaddy 4ch Gemma-2B = WER 0.4088, CER 0.2077"
+echo "============================================"
+
+# Extract final WERs from logs
+echo ""
+echo "============================================"
+echo "RESULTS SUMMARY"
+echo "============================================"
+for LOG in v2_zeroshot_live v2_finetune_live v2_scratch_live v2_test_gaddy_live v2_test_finetune_live v2_test_scratch_live; do
+    LOGFILE="$PROJECT_DIR/hpc/logs/${LOG}.log"
+    if [ -f "$LOGFILE" ]; then
+        BEST_WER=$(grep -o 'Best val WER: [0-9.]*' "$LOGFILE" | tail -1)
+        BEST_CER=$(grep -o 'Best val CER: [0-9.]*' "$LOGFILE" | tail -1)
+        echo "  $LOG: $BEST_WER, $BEST_CER"
+    fi
+done
+echo "============================================"

@@ -1,0 +1,172 @@
+#!/bin/bash
+##############################################################################
+# SilentSpeechLLM — Ablation Study Launcher
+#
+# Submits PBS jobs: 4 LLMs × 10 progressive stages = 40 jobs
+#
+# USAGE:
+#   bash ~/aml_lab/hpc/run_ablation.pbs
+#
+# MONITOR:
+#   qstat -u $USER
+#   tail -f ~/aml_lab/hpc/logs/abl_*.log
+#
+# RESULTS:
+#   python ~/aml_lab/hpc/summarize_ablation.py
+##############################################################################
+
+PROJECT_DIR="/rds/general/user/yma25/home/aml_lab"
+SCRIPT="$PROJECT_DIR/hpc/train_ablation.py"
+LOG_DIR="$PROJECT_DIR/hpc/logs"
+CKPT_BASE="$PROJECT_DIR/checkpoints"
+
+mkdir -p "$LOG_DIR"
+
+# ============================================================================
+# LLMs (the 4 that worked in our grid search)
+# ============================================================================
+LLMS=(
+    "gemma2_2b:google/gemma-2-2b-it"
+    "phi3:microsoft/Phi-3-mini-4k-instruct"
+    "llama3b:meta-llama/Llama-3.2-3B-Instruct"
+    "qwen2.5_3b:Qwen/Qwen2.5-3B-Instruct"
+)
+
+# ============================================================================
+# Progressive stages
+# ============================================================================
+# Stage 0:  BASELINE (all improvements OFF)
+# Stage 1:  + LLM eval mode
+# Stage 2:  + Prompt-consistent inference
+# Stage 3:  + Cosine LR schedule
+# Stage 4:  + Gradient clipping
+# Stage 5:  + Adaptor dropout (0.15)
+# Stage 6:  + Output LayerNorm
+# Stage 7:  + Label smoothing (0.1)
+# Stage 8:  + Data augmentation (noise)
+# Stage 9:  + Higher weight decay (0.05)
+STAGES=(0 1 2 3 4 5 6 7 8 9)
+
+# ============================================================================
+# Fixed hyperparameters
+# ============================================================================
+MODEL_SIZE=768
+NUM_EPOCHS=500
+BATCH_SIZE=8
+LR="1e-4"
+EVAL_EVERY=10
+SAVE_EVERY=50
+
+STAGE_NAMES=(
+    "S0_baseline"
+    "S1_llm_eval"
+    "S2_prompt_inf"
+    "S3_cosine_lr"
+    "S4_grad_clip"
+    "S5_dropout"
+    "S6_layernorm"
+    "S7_label_smooth"
+    "S8_augmentation"
+    "S9_weight_decay"
+)
+
+echo "============================================"
+echo "SilentSpeechLLM Ablation Study Launcher"
+echo "============================================"
+echo "LLMs: ${#LLMS[@]}"
+echo "Stages: ${#STAGES[@]} (0-9)"
+echo "Total jobs: $((${#LLMS[@]} * ${#STAGES[@]}))"
+echo "============================================"
+
+JOB_COUNT=0
+
+for llm_entry in "${LLMS[@]}"; do
+    LLM_NAME="${llm_entry%%:*}"
+    LLM_PATH="${llm_entry##*:}"
+
+    for STAGE in "${STAGES[@]}"; do
+        SNAME="${STAGE_NAMES[$STAGE]}"
+        JOB_NAME="abl_${LLM_NAME}_${SNAME}"
+        CKPT_DIR="${CKPT_BASE}/abl_${LLM_NAME}_${SNAME}"
+        LIVE_LOG="${LOG_DIR}/abl_${LLM_NAME}_${SNAME}.log"
+        PBS_OUT="${LOG_DIR}/abl_${LLM_NAME}_${SNAME}.out"
+        PBS_ERR="${LOG_DIR}/abl_${LLM_NAME}_${SNAME}.err"
+
+        echo ""
+        echo "Submitting: $JOB_NAME (Stage $STAGE)"
+        echo "  LLM: $LLM_PATH"
+
+        qsub <<ENDPBS
+#!/bin/bash
+#PBS -N ${JOB_NAME}
+#PBS -l select=1:ncpus=8:mem=64gb:ngpus=1:gpu_type=L40S
+#PBS -l walltime=48:00:00
+#PBS -o ${PBS_OUT}
+#PBS -e ${PBS_ERR}
+
+PROJECT_DIR="/rds/general/user/yma25/home/aml_lab"
+
+cd "\$PROJECT_DIR" || exit 1
+
+module load CUDA/12.1.1
+
+source "\$HOME/miniforge3/etc/profile.d/conda.sh"
+conda activate emg_llm
+
+export LD_LIBRARY_PATH="\$CUDA_HOME/lib64:\$LD_LIBRARY_PATH"
+
+echo "============================================"
+echo "Job: ${JOB_NAME}"
+echo "Stage: ${STAGE} (${SNAME})"
+echo "LLM: ${LLM_PATH}"
+echo "Node: \$(hostname)"
+echo "Date: \$(date)"
+echo "============================================"
+
+python -c "
+import sys; print(f'Python: {sys.version}')
+import torch; print(f'PyTorch: {torch.__version__}')
+print(f'CUDA: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'GPU: {torch.cuda.get_device_name(0)}')
+    print(f'Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
+" 2>&1
+
+python "\$PROJECT_DIR/hpc/train_ablation.py" \\
+    --hc_features_dir "\$PROJECT_DIR/data/extracted_emg_features" \\
+    --json_path "\$PROJECT_DIR/data/10_selected_samples.json" \\
+    --llm_path "${LLM_PATH}" \\
+    --model_size ${MODEL_SIZE} \\
+    --checkpoint_dir "${CKPT_DIR}" \\
+    --num_epochs ${NUM_EPOCHS} \\
+    --batch_size ${BATCH_SIZE} \\
+    --lr ${LR} \\
+    --eval_every ${EVAL_EVERY} \\
+    --save_every ${SAVE_EVERY} \\
+    --stage ${STAGE} \\
+    --log_file "${LIVE_LOG}" \\
+    2>&1
+
+echo "============================================"
+echo "Exit code: \$?"
+echo "Completed at \$(date)"
+echo "============================================"
+ENDPBS
+
+        JOB_COUNT=$((JOB_COUNT + 1))
+        echo "  -> Submitted (#$JOB_COUNT)"
+        sleep 2
+    done
+done
+
+echo ""
+echo "============================================"
+echo "All $JOB_COUNT jobs submitted!"
+echo ""
+echo "Monitor:"
+echo "  qstat -u \$USER"
+echo "  tail -f ~/aml_lab/hpc/logs/abl_*.log"
+echo ""
+echo "Results:"
+echo "  python ~/aml_lab/hpc/summarize_ablation.py"
+echo "============================================"

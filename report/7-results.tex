@@ -1,0 +1,281 @@
+\section{Results and Conclusions}
+
+This section discusses all results of the experiments outlined in Section~\ref{sec:software_pipeline}.
+
+\subsection{Grid Search: LLM and Adaptor Size}
+
+First, we discuss the results obtained from the grid search on 2 LLMs in Table~\ref{tab:grid_search}. The `MS' column shows the model\_size evaluated for 3 values. `Hidden' column shows the llm\_hidden (LLM's input embedding space). Params represents the approximate number of parameters contained by the corresponding adaptor. WER is the Word Error Rate. CER is the Character Error Rate. We only run for 500 epochs; the last column shows the epoch when the best adaptor was obtained during training. It is worth noting that CER is important for the date/time dataset of Gaddy because small errors, such as a misprediction of `11 November' as `12 November', result in 50\% WER (as 11 and 12 are considered words by WER) but only 10\% CER (as individual characters are compared). Also, notably, running for more epochs may lead to better results.
+
+\begin{table}[ht]
+\centering
+\caption{Grid search results across 2 LLMs and 3 model sizes.}
+\label{tab:grid_search}
+\small
+\begin{tabular}{clcccccr}
+\toprule
+\textbf{Rank} & \textbf{LLM} & \textbf{MS} & \textbf{Hidden} & \textbf{Params} & \textbf{WER} & \textbf{CER} & \textbf{Best Epc} \\
+\midrule
+\rowcolor{gray!12} \textbf{1} & \textbf{gemma-2-2b-it} & \textbf{768} & \textbf{2304} & \textbf{6.0M} & \textbf{0.3285} & \textbf{0.1476} & \textbf{460} \\
+2 & gemma-2-2b-it & 1024 & 2304 & 10.1M & 0.3577 & 0.2063 & 370 \\
+3 & Qwen2.5-3B & 1024 & 2048 & 10.0M & 0.4088 & 0.1877 & 350 \\
+4 & Qwen2.5-3B & 384 & 2048 & 1.8M & 0.4307 & 0.2049 & 290 \\
+5 & gemma-2-2b-it & 384 & 2304 & 1.9M & 0.4453 & 0.2407 & 320 \\
+6 & Qwen2.5-3B & 768 & 2048 & 5.9M & 0.4818 & 0.2550 & 250 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We note that Google Gemma-2 2B model outperforms Qwen-2.5 3B for the 768 and 1024 MS. This result simply concludes that Gemma is more suited to be `fooled' into recognising and mapping learned EMG features to words. We conclude that Gemma has a better capacity to learn a broader context than simple word input embeddings. Gemma with MS=384 seems to have underfit the Gaddy dataset. Qwen model here shows unstable behavior where the MS=1024 variant is best performing, followed by MS=384 variant and MS=768. No definitive conclusion can be obtained from this.
+
+Next, we demonstrate a thorough comparison between 8 LLMs, as shown in Table~\ref{tab:8llm_comparison}. Notably, this table only learnt adaptors for MS = 768 for every LLM and it is probable that the best performing LLM for each type be obtained using other adaptor sizes such as Qwen for MS = 1024 as shown in Table~\ref{tab:grid_search}. However, we believe MS = 768 encompasses the majority of LLMs at close-to-peak performance from random MS studies and from inspiration from \citet{mohapatra2025}.
+
+\begin{table}[ht]
+\centering
+\caption{Comparison of 8 LLMs with model\_size = 768.}
+\label{tab:8llm_comparison}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{clcccccr}
+\toprule
+\textbf{Rank} & \textbf{LLM} & \textbf{MS} & \textbf{Hidden} & \textbf{Params} & \textbf{WER} & \textbf{CER} & \textbf{Best Epc} \\
+\midrule
+\rowcolor{gray!12} \textbf{1} & \textbf{gemma-2-2b-it} & \textbf{768} & \textbf{2304} & \textbf{6.0M} & \textbf{0.3285} & \textbf{0.1476} & \textbf{460} \\
+2 & Phi-3-mini-4k & 768 & 3072 & 6.3M & 0.3650 & 0.1777 & 390 \\
+3 & DeepSeek-R1-Distill-Qwen-1.5B & 768 & 1536 & $\sim$5.5M & 0.4088 & 0.1748 & 310 \\
+4 & LiquidAI/LFM2.5-1.2B-Instruct & 768 & 2048 & $\sim$5.9M & 0.4088 & 0.2020 & 300 \\
+5 & LLaMA-3.2-3B & 768 & 3072 & 6.3M & 0.4307 & 0.2421 & 380 \\
+6 & Qwen2.5-3B & 768 & 2048 & 5.9M & 0.4818 & 0.2550 & 250 \\
+7 & stablelm-2-1\_6b-chat & 768 & 2048 & $\sim$5.9M & 0.5109 & 0.2908 & 440 \\
+8 & SmolLM2-1.7B-Instruct & 768 & 2048 & $\sim$5.9M & 0.5401 & 0.3309 & 260 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+We make the following conclusions from these results:
+
+\begin{enumerate}
+    \item \textbf{LLM Choice Matters Significantly}
+
+The choice of LLM for the task of unvoiced speech recognition significantly affects the study's performance. The WER changes from 0.3285 to 0.5401 between Gemma and SmolLM2, a 64\% relative difference, even though the LLM is frozen. This signifies that the LLM's pre-training representation and quality heavily influence EMG decoding quality. Research into the documentation of LLM pre-training data, if possible, is hence encouraged. It is also noteworthy that LLM size is not directly proportional to performance, as the worst performing LLMs -- StableLM and SmolLM2 are the largest and one of the smallest LLMs in our study.
+
+    \item \textbf{Hidden Dimension $\neq$ Performance}
+
+Definitive conclusions cannot be made on the optimal llm\_hidden value. As we notice in Table~\ref{tab:hidden_dim}, DeepSeek has the smallest hidden dimension but ranks 3\textsuperscript{rd}, beating LLaMA-3.2-3B and Qwen2.5-3B, which have larger hidden dimensions and more parameters.
+
+\begin{table}[ht]
+\centering
+\caption{Hidden dimension vs.\ performance comparison.}
+\label{tab:hidden_dim}
+\begin{tabular}{ccl}
+\toprule
+\textbf{Hidden} & \textbf{Best WER} & \textbf{LLM(s)} \\
+\midrule
+\rowcolor{gray!12} 2304 & \textbf{0.3285} & Gemma-2 \\
+3072 & 0.3650 & Phi-3 \\
+\rowcolor{gray!12} 1536 & 0.4088 & DeepSeek \\
+2048 & 0.4088--0.5401 & LiquidAI, LLaMA, Qwen, StableLM, SmolLM \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+    \item \textbf{Convergence Speed Variation}
+
+There is no definitive correlation between convergence speed and final performance, as we note that DeepSeek and Qwen converge fastest around 250-310 epochs, whereas StableLM performs poorly despite converging at 440 epochs.
+\end{enumerate}
+
+\subsection{Ablation Study: Training Recipe}
+
+Next, we discuss results from ablation study performed on 4 LLMs, as follows:
+
+\begin{enumerate}
+    \item gemma-2-2b-it
+    \item LLaMA-3.2-3B-Instruct
+    \item Phi-3-mini-4k-instruct
+    \item Qwen2.5-3B-Instruct
+\end{enumerate}
+
+In this study, we find that each adaptor responds slightly differently to an introduced ablation in training.
+
+Table~\ref{tab:ablation} displays the impact of ablations on Gemma-2. We discard exact results for other LLMs and instead show ablation-wise results for all LLMs in the last column of the table. We select the best model from S6 ablation (6 stacked ablations) as further ablations hurt Gemma's performance.
+
+\begin{table}[ht]
+\centering
+\caption{Ablation study results on Gemma-2 and summary across 4 LLMs.}
+\label{tab:ablation}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{clcccc}
+\toprule
+\textbf{Stage} & \textbf{Improvement Added} & \textbf{WER} & \textbf{CER} & \textbf{$\Delta$WER} & \textbf{Cross-LLM (4 LLMs)} \\
+\midrule
+S0 & Baseline (all OFF) & 0.9635 & 0.7550 & --- & --- \\
+S1 & + LLM eval mode & 0.9635 & 0.7550 & 0.0000 & 0/4 helped \\
+\rowcolor{gray!12} S2 & + Prompt-consistent inference & 0.6277 & 0.3868 & $-$0.3358 & 4/4 helped \\
+S3 & + Cosine LR schedule & 0.6131 & 0.4241 & $-$0.0146 & 2/4 helped \\
+\rowcolor{gray!12} S4 & + Gradient clipping & 0.5839 & 0.3596 & $-$0.0292 & 3/4 helped \\
+\rowcolor{gray!12} S5 & + Adaptor dropout (0.15) & 0.4307 & 0.2249 & $-$0.1532 & 4/4 helped \\
+\rowcolor{gray!12} \textbf{S6} & \textbf{+ Output LayerNorm} & \textbf{0.3212} & \textbf{0.1447} & $\mathbf{-}$\textbf{0.1095} & \textbf{3/4 helped} \\
+S7 & + Label smoothing (0.1) & 0.3285 & 0.1590 & $+$0.0073 & 2/4 helped \\
+S8 & + Data augmentation & 0.3723 & 0.1777 & $+$0.0438 & 1/4 helped \\
+S9 & + Weight decay (0.05) & 0.3285 & 0.1476 & $-$0.0438 & 2/4 helped \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+The following are our conclusions:
+
+\begin{enumerate}
+    \item \textbf{Prompt-Consistent Inference:}
+
+This is a bug fix as the original codebase has a train/test mismatch. This also justifies our WER of 0.43 vs 0.49 in the base paper for the LLaMA run. This ablation helps all 4 LLMs we study in improving WER.
+
+    \item \textbf{Output LayerNorm:}
+
+This ablation improves WER for 3 out of 4 LLMs. This is attributed to the fact that adaptor outputs raw linear projections into llm\_hidden space, but LayerNorm is required to convert them into LLM's specific scale, for better processing.
+
+    \item \textbf{Regularisation:}
+    \begin{enumerate}
+        \item[i.] Dropout (S5): helped all 4 LLMs, universally beneficial with only 500 training samples
+        \item[ii.] Grad clipping (S4): helped 3 of 4 LLMs, stabilises training
+        \item[iii.] Label smoothing (S7): helped and hurt 2 LLMs each. Huge for Phi-3 ($-0.10$) but slightly hurt Qwen ($+0.007$)
+        \item[iv.] Weight decay (S9): again, helps and hurts 2 LLMs each, with no specific correlation
+    \end{enumerate}
+
+    \item \textbf{Data augmentation:}
+
+Not the best ablation, as it only aids Qwen in increasing WER. We believe data augmentation adds noise that confuses our models during training for the 67-phrase closed vocab dataset.
+
+    \item \textbf{Best Stage:}
+
+This varies by LLM and implies that the optimal training recipe is LLM-specific. The best stages are as follows:
+    \begin{enumerate}
+        \item[i.] Gemma-2: S6
+        \item[ii.] Phi-3: S7
+        \item[iii.] Qwen: S8
+        \item[iv.] LLaMA: S7
+    \end{enumerate}
+\end{enumerate}
+
+Overall, we conclude with certainty that the majority of ablations helped us improve our adaptors' performance on the task of unvoiced speech recognition.
+
+\subsection{Channel Reduction Analysis}
+
+In this section, we discuss results from the first further study mentioned in Section~\ref{sec:software_pipeline}.
+
+The selection of the best 4 and 3 channels is done using three independent metrics and combining the ranks via Borda count. The methods and the quantities they measure are stated in Table~\ref{tab:channel_methods}. Each method produces a ranking 1--8. The Borda score is variance\_rank + uniqueness\_rank + energy\_rank. The top $N$ channels by lowest score are selected.
+
+\begin{table}[ht]
+\centering
+\caption{Channel selection methods and the quantities they measure.}
+\label{tab:channel_methods}
+\begin{tabular}{lp{5.5cm}p{5.5cm}}
+\toprule
+\textbf{Method} & \textbf{What it measures} & \textbf{Rationale} \\
+\midrule
+Variance & Total feature variance per channel & Higher variance = more informative signal \\[4pt]
+Uniqueness & $1 - \text{mean correlation with other channels}$ & Lower correlation = non-redundant info \\[4pt]
+Energy & L2 norm of channel features & Stronger muscle activation = better SNR \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:channel_results} displays results when we perform channel reduction on the Gaddy dataset. The first row is the standard Gemma-2 results which have been obtained earlier. The second row corresponds to results with 4 channels and the third row to 3 channels.
+
+Here are our conclusions from the results:
+
+\begin{enumerate}
+    \item \textbf{Linear degradation:} We see a drop of 0.08 WER and 0.07 WER approximately as we reduce the number of channels. This implies that based on budget and accuracy constraints, one can deduce the correct number of channels to be used.
+
+    \item \textbf{Convergence rate:} We notice faster converge (reduction in number of epochs) as we reduce channels. This explains the fact well that less data (due to fewer features) gets learned by the model faster, although it converges to a worse optimum.
+
+    \item \textbf{Establish state-of-the-art results:} Our worst-performing 3-channel Gemma-2 model itself beats \citet{mohapatra2025} results by approximately 0.02 WER, using the LLaMA-3.2-3B model with 8 channels. This is a significant improvement, especially considering resource-constrained train/test environments.
+\end{enumerate}
+
+\begin{table}[ht]
+\centering
+\caption{Channel reduction results on the Gaddy dataset using Gemma-2-2b-it (MS=768, Hidden=2304). The ResBlocks column shows the input dimension change; LSTM and Projection remain fixed.}
+\label{tab:channel_results}
+\begin{tabular}{cccccccc}
+\toprule
+\textbf{Channels} & \textbf{Features} & \textbf{Params} & \textbf{WER} & \textbf{CER} & \textbf{Best Epc} & \textbf{ResBlocks input} \\
+\midrule
+\rowcolor{gray!12} 8 & 112 & 6.0M & \textbf{0.3285} & \textbf{0.1476} & 460 & $112 \to 768/384/192$ \\
+4 & 56 & $\sim$5.97M & 0.4088 & 0.2077 & 360 & $56 \to 768/384/192$ \\
+3 & 42 & $\sim$5.95M & 0.4745 & 0.2507 & 290 & $42 \to 768/384/192$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Personal EMG Dataset Experiments}
+
+\subsubsection{Custom dataset -- similar to Gaddy}
+
+We collected this data for 438 samples. We use three methods:
+
+\begin{enumerate}
+    \item Zero-shot: Inference only using the adaptor trained on the Gaddy dataset
+    \item Fine-tune: Train a learned adaptor (from Gaddy) further on our dataset
+    \item From-scratch: Train an adaptor from scratch on only our dataset
+\end{enumerate}
+
+The results are displayed in Table~\ref{tab:custom_gaddy}. It is evident that from-scratch training on only our dataset yields much better results than otherwise. This can be attributed to \citet{mohapatra2025}, which states that EMG signals are highly person-specific and that there is significant variation in how muscles move between people. Also, Gaddy used 8 channels while we use only 4, and the sensor quality and placement vary highly between the two studies, leading to sub-optimal fine-tuned results. It is also noteable that zero-shot transfer completely fails and the Gaddy-trained adaptor produces random output on personal EMG data.
+
+\begin{table}[ht]
+\centering
+\caption{Custom dataset results (Gaddy-style 67-word vocabulary).}
+\label{tab:custom_gaddy}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Experiment} & \textbf{Best WER} & \textbf{Best CER} \\
+\midrule
+A) Zero-shot (Gaddy weights $\to$ our data) & 1.032 & 0.931 \\
+B) Fine-tune (Gaddy weights $\to$ train on our data) & 0.925 & 0.804 \\
+\rowcolor{gray!12} \textbf{C) From scratch (random init $\to$ our data)} & \textbf{0.871} & \textbf{0.726} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Custom dataset -- New 10-word dataset}
+
+10 words which are phonetically distinct fruits and vegetables are used in this study. We collect 250 samples, 25 samples per class, ensuring a dataset with balanced classes. From another study, we find that the optimum model\_size for our small dataset is 384. This is less in comparison to 768, which worked well for a larger dataset such as Gaddy's. Hence, we present results in Table~\ref{tab:custom_10word} wherein we only train/test adaptor with model\_size = 384 on our dataset. This is also conducted using our best-performing Gemma-2 LLM.
+
+\begin{table}[ht]
+\centering
+\caption{Custom 10-word dataset results with varying channel counts.}
+\label{tab:custom_10word}
+\begin{tabular}{cccc}
+\toprule
+\textbf{Channels} & \textbf{Features} & \textbf{WER} & \textbf{Word Accuracy} \\
+\midrule
+1ch & 14 & 0.3600 & 64\% \\
+2ch & 28 & 0.2400 & 76\% \\
+\rowcolor{gray!12} \textbf{3ch} & \textbf{42} & \textbf{0.0800} & \textbf{92\%} \\
+\rowcolor{gray!12} \textbf{4ch} & \textbf{56} & \textbf{0.0800} & \textbf{92\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This table is significant as we make the following conclusions:
+
+\begin{enumerate}
+    \item \textbf{Justifies our whole study:} Consumer-grade EMG setup works even with just 3 channels and 250 training samples on a closed 10-word vocabulary. We prove that this is especially helpful to set up a simple setup for people who have completely lost their voice and would like to communicate very simple words for basic functions.
+
+    \item \textbf{Channel-wise results:} A single channel achieves 64\% accuracy when targeting the muscles we highlighted previously. We see no improvement from 3 channels to 4 channels due to a combination of 2 factors: possible muscle overlap, and noisy 4\textsuperscript{th} channel signals, which impact its performance.
+
+    \item \textbf{Economic feasibility:} Once again, we demonstrate that, given resource constraints, the appropriate number of channels can be identified and used.
+\end{enumerate}
+
+\subsubsection{Discussion of Personal Dataset Results}
+
+While the results above are encouraging, several practical challenges emerged during our personal data experiments that warrant discussion.
+
+\paragraph{Trial 1: Complexity vs.\ Data.} The 67-word Gaddy-style vocabulary proved too complex relative to our 438-sample dataset. With 426 unique phrases from only 82 unique tokens, many phrase combinations appeared only once, leaving the adaptor with insufficient repetition to learn reliable EMG-to-text mappings. Additionally, our attempt to fuse EMG samples from different participants (collected across separate sessions) failed to improve performance. This is consistent with prior findings that sEMG signals are highly person-specific \citep{mohapatra2025}---differences in facial anatomy, muscle activation patterns, and electrode impedance between individuals render cross-subject data fusion ineffective without explicit domain adaptation.
+
+\paragraph{Trial 2: The Inference Gap.} Although the 10-word fruit classification achieved 92\% accuracy on the development set, we observed a noticeable drop during standalone inference sessions conducted after the main data collection. We attribute this to three factors:
+\begin{itemize}
+    \item \textbf{Placement sensitivity:} Even a 2--3\,mm shift in sensor placement between sessions produced measurably different signals, owing to the high density of overlapping facial muscles in the perioral region.
+    \item \textbf{Skin integrity:} Repeated electrode application caused mild skin irritation, particularly on the neck, which degraded the electrode--skin contact impedance and introduced noise in later sessions.
+    \item \textbf{Hardware variance:} While the mapping from muscle location to Arduino analog pin was kept consistent, the physical sensor-to-location assignment was not always identical across sessions, introducing subtle gain and offset differences.
+\end{itemize}
+
+These observations underscore that robust real-world deployment of consumer-grade EMG silent speech systems requires careful attention to electrode placement reproducibility, session-to-session calibration, and potentially online adaptation techniques.

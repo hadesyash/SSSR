@@ -1,0 +1,39 @@
+# Data files (download separately — see data/README.md)
+data/extracted_emg_features/
+data/combined_emg_features*/
+data/test_emg_features*/
+data/my_emg_features/
+data/emg_data/
+data/*.tar.gz
+data/*.zip
+data/*_3ch/
+data/*_4ch/
+data/*_1ch/
+data/*_2ch/
+
+# Model weights
+models/
+checkpoints/
+*.pth
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Logs
+*.log
+*.txt.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

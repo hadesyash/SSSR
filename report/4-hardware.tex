@@ -1,0 +1,68 @@
+\section{Hardware}
+\label{sec:hardware}
+
+\subsection{sEMG Signal Characteristics}
+
+sEMG measures the voltage between two electrodes placed on the skin above a muscle during contraction. The recorded signal does not arise from a single source but from the superposition of many individual motor unit action potentials within the muscle. This is a particular issue for facial muscles because of their overlapping structure, which results in crosstalk between adjacent muscles and can degrade data quality. To mitigate this, the sensor must be placed close to the middle of the muscle of interest (the muscle belly) and kept at a consistent location between experiments.
+
+sEMG is a weak signal---up to 1\,mV peak-to-peak for facial muscles, compared with up to 10\,mV for large limb muscles such as the biceps. Bringing the signal into the Arduino sensing range (0--5\,V) requires significant amplification; however, noise is amplified alongside the signal. Bandpass filtering (20--500\,Hz, where most of the EMG energy lies) is the most common pre-processing technique to suppress this intrinsic noise. We set the sampling frequency to 1,000\,Hz, satisfying the Nyquist criterion for the 500\,Hz upper band edge. Additionally, AC mains interference at 50\,Hz falls within the signal band and can be substantial; a notch filter at 50\,Hz is therefore applied as a further processing step.
+
+\subsection{Hardware Selection}
+
+We chose the Arduino Uno R4, a significant upgrade over the R3. It offers a 16$\times$ more precise ADC (14-bit vs.\ 10-bit), faster conversions, and configurable DMA for stable data transfer. Although the R4 has a smaller community than the R3, the performance advantages greatly outweigh this drawback.
+
+We selected four MyoWare 2.0 sensors for EMG acquisition. The first-generation MyoWare sensors were successfully used by previous students on the same lab project \citep{sun2022}, establishing confidence in the platform. MyoWare also offers an Arduino-compatible extension board (\pounds9) supporting up to six sensors, which simplifies the setup and reduces the risks associated with custom hardware. The sensors are specifically designed for Arduino, with a fixed 200$\times$ amplification gain tuned for the application. We used four ArduLink sensor extension boards and four short 3.5\,mm jack-to-jack cables to connect the sensors to the shield.
+
+\subsection{Data Acquisition and Firmware}
+
+The system's firmware manages the real-time pipeline between the muscle sensors and the host computer. As illustrated in Figure~\ref{fig:data_pipeline}, the process is divided into two primary stages: acquisition and transfer.
+
+To maintain a stable 1 kHz sampling rate across four channels, we utilize a hardware timer to trigger an interrupt-driven ADC Scan Mode. This ensures ``simultaneous'' sampling of all facial muscles. The resulting data is stored in a ring buffer on the Arduino Uno R4. To optimize throughput, data is only transmitted once the accumulated samples match the size of the UART TX buffer. This non-blocking serial transfer prevents data loss and minimizes CPU overhead.
+
+Finally, the host-side software receives the raw binary data, parses it into arrays, and saves the recording. A simple character-based protocol (sending `S' for Start or `E' for End) allows the host to control the Arduino's recording state remotely.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=\textwidth]{figures/image2.png}
+    \caption{Data pipeline architecture. Acquisition (bottom to center) captures the filtered 0--5V analog muscle signals into a ring buffer via a 1 kHz timer interrupt; Transfer (center to top) manages the non-blocking serial relay.}
+    \label{fig:data_pipeline}
+\end{figure}
+
+Table~\ref{tab:hardware_comparison} compares our setup with the research-grade system used by \citet{gaddy2021}, whose dataset serves as the primary benchmark for our ML experiments. With a strict project budget of \pounds300, we achieved a 5$\times$ cost reduction compared to the Gaddy benchmark. Gaddy's monopolar electrode configuration picks up significant common-mode noise across the entire head, whereas our bipolar (differential) configuration rejects this noise at the muscle site before it reaches the Arduino. This allows us to achieve a high signal-to-noise ratio with only a 14-bit ADC and 4 channels, in place of a 24-bit ADC and 8 channels. Our setup produces a scientifically valid dataset at approximately 20\% of the cost.
+
+\begin{table}[ht]
+\centering
+\caption{Comparison of our hardware setup with the Gaddy \& Klein (2020) benchmark.}
+\label{tab:hardware_comparison}
+\begin{tabular}{p{3.5cm}p{5.5cm}p{5.5cm}}
+\toprule
+\textbf{Parameter} & \textbf{Gaddy \& Klein (2020)} & \textbf{Our Setup} \\
+\midrule
+Acquisition Board & OpenBCI Cyton Biosensing Board (research-grade) & Arduino Uno R4 + MyoWare Arduino Shield \\
+ADC Resolution & \textbf{24-bit} & \textbf{14-bit} \\
+Channels & 8 EMG channels & 4 EMG channels \\
+Electrode Config. & \textbf{Monopolar} (shared reference behind ear) & \textbf{Bipolar} / differential \\
+Sample Rate & 1,000 Hz & 1,000 Hz \\
+Bandpass Filtering & \textbf{No hardware filtering} & 20--500 Hz first-order bandpass \\
+Electrodes & \textbf{Gold-plated} reusable electrodes with Ten20 conductive paste & Disposable \textbf{Ag/AgCl (silver)} snap electrodes \\
+Cost & $\sim$\pounds1,000+ & $\sim$\pounds200 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+To align with the high-variance features identified by \citet{gaddy2020}, we targeted four muscle groups critical for articulatory movement: the Orbicularis oris (lips), Masseter (jaw), Mentalis (chin), and Zygomaticus major (upper mouth corner). Focusing on the perioral and chin regions concentrated our sensors on the sites of maximum displacement during speech.
+
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[b]{0.4\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/image3.jpeg}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/image4.jpeg}
+    \end{subfigure}
+    \caption{Target muscles and sensor placement.}
+    \label{fig:target_muscles}
+\end{figure}

@@ -1,0 +1,16 @@
+torch>=2.1.0
+transformers>=4.44.0
+peft>=0.10.0
+accelerate
+jiwer
+unidecode
+librosa
+soundfile
+numpy
+scipy
+scikit-learn
+matplotlib
+tqdm
+huggingface_hub
+safetensors
+pyserial

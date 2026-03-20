@@ -1,0 +1,21 @@
+\section{Introduction}
+
+Silent Speech Interfaces are designed to recognise speech without sound, thereby allowing communication in scenarios where vocalisation is impossible or undesirable. sEMG is appropriate for this task, since it captures muscle activity from facial articulators even during silent mouthing.
+
+The Smart Silent Speech Reader (SSSR) project is focused on the use of machine learning to assign meaning to unvoiced sEMG signals in terms of word representations. The previous Imperial project introduced a small-vocabulary Arduino-based classifier \citep{sun2022}, but performance there was largely limited by noise, user dependence, and constrained expressiveness.
+
+Our project develops this capability further by investigating better sensing and modelling approaches that could support a larger vocabulary. This aligns with recent work showing that LLM-based EMG-to-text pipelines can interpret unvoiced EMG with strong data efficiency \citep{mohapatra2025} and that multimodal LLM-enhanced models can significantly improve silent speech recognition \citep{benster2024}. This involves overcoming issues such as weak and variable EMG signals, missing voiced data, and microcontroller hardware constraints. The overall result is a practical, demonstrable system for silent communication based on unvoiced EMG. This system ultimately aims to assist individuals who cannot vocalise speech (e.g., due to neurological or muscular impairment) and to enable silent or private communication in everyday environments.
+
+\subsection{Aims \& Objectives}
+
+We aim to build a system that can convert EMG signals captured from targeted facial muscles into meaningful word representations. To achieve this, we propose to train a deep learning-based pipeline on unvoiced EMG signals, using textual transcriptions as ground-truth labels during training. At inference time, the model should operate solely on unvoiced EMG, enabling communication for scenarios where the user cannot produce sound but needs to convey information.
+
+The objectives of this work include:
+\begin{itemize}
+    \item To design a sensing setup targeted at facial muscles involved in articulation.
+    \item To collect a synchronised dataset of unvoiced EMG signals aligned with textual labels.
+    \item To develop signal processing and feature extraction methods suitable for EMG and auxiliary sensors.
+    \item To train and evaluate deep learning models capable of mapping EMG sequences to words or sentences.
+    \item To explore extended vocabulary recognition, beyond the small sets (classification task) used in previous implementations.
+    \item To deploy a simplified version suitable for real-time demonstration using Arduino and a computer (for the deep learing models).
+\end{itemize}

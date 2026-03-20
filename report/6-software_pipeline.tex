@@ -1,0 +1,162 @@
+\section{Software Pipeline}
+\label{sec:software_pipeline}
+
+The software pipeline consists of the following three stages:
+
+\begin{enumerate}
+    \item Stage 1: Data processing \& feature extraction from raw EMG signals
+    \item Stage 2: Training an adaptor - a specialized neural network to learn mapping between EMG signals and LLM input embedding space
+    \item Stage 3: Using a frozen LLM to predict words
+\end{enumerate}
+
+This pipeline is also depicted in Figure~\ref{fig:pipeline_overview}.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=\textwidth]{figures/image6.png}
+    \caption{Pipeline overview.}
+    \label{fig:pipeline_overview}
+\end{figure}
+
+\subsection{Stage 1: Data Processing \& Feature Extraction}
+
+The collected EMG signals through the Arduino and MyoWare 2.0 sensors (4 channels) are recorded as individual CSV files, one per utterance. Each file contains raw ADC readings at 1\,kHz across all channels. The signal conditioning steps described in Section~\ref{sec:hardware}---bandpass filtering (20--500\,Hz) and 50\,Hz notch filtering---are applied in hardware by the MyoWare sensors prior to digitisation.
+
+From the filtered signal, we extract 14 handcrafted (HC) features per channel per time step: 5 time-domain features and 9 frequency-domain features derived from short-time Fourier transform (STFT) magnitude bins. This feature set follows the recommendations of \citet{gaddy2020} and \citet{mohapatra2025}, who demonstrate that handcrafted features consistently outperform raw EMG as input to LLM-based adaptors. Features are computed over short overlapping windows and concatenated across all channels, producing a feature vector of dimension $C \times 14$ at each time step (e.g., 112 for 8 channels, 56 for 4 channels).
+
+For the Gaddy dataset, we use pre-extracted features provided by \citet{mohapatra2025}. For our personal dataset, we apply the same feature extraction pipeline to our raw recordings. The extracted features are then normalised to bring their distribution in line with the Gaddy feature range. Finally, the normalised feature sequences are saved in the format expected by the adaptor's input layer (Section~\ref{sec:adaptor}).
+
+\subsection{Stage 2: EMG Adaptor}
+\label{sec:adaptor}
+
+This module consists of a convolutional layer, three ResBlocks, a convolutional layer, a BiLSTM layer, a convolutional layer and finally a linear layer. We define a parameter model\_size which controls the adaptor's capacity, or its width. Our setup consists of 4 channels, but as an example, for the Gaddy dataset, if we consider 8 channels, and 14 handcrafted features, then the input dimension to the adaptor is a multiplication of the channels and features, 112 here. An example flow of model\_size as 768 and 384 is shown in Table~\ref{tab:adaptor_flow}. It is also worth noting that the data is downsampled by a factor of 48 from $T$ to $T/48$ in the last layer of the adaptor, which is then linearly mapped to the input embedding space dimension of the chosen LLM (depicted as llm\_hidden). Every LLM has a different embedding space, and we depict a few examples in Table~\ref{tab:llm_hidden} that illustrate the interplay between model\_size and llm\_hidden. The model\_size parameter is crucial to control overfitting or underfitting as we experiment with different values. Notably, our adaptor architecture is inspired by \citet{mohapatra2025}.
+
+\begin{table}[ht]
+\centering
+\caption{Example data flow through the adaptor for model\_size 768 and 384.}
+\label{tab:adaptor_flow}
+\label{tab:adaptor_flow_384}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Layer} & \textbf{MS = 768} & \textbf{MS = 384} \\
+\midrule
+ResBlock 1 & $112 \to 768$ & $112 \to 384$ \\
+ResBlock 2 & $768 \to 384$ & $384 \to 192$ \\
+ResBlock 3 & $384 \to 192$ & $192 \to 96$ \\
+BiLSTM     & $192 \to 384$ & $96 \to 192$ \\
+Linear     & $384 \to \text{llm\_hidden}$ & $192 \to \text{llm\_hidden}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Interplay between model\_size and llm\_hidden for different LLMs.}
+\label{tab:llm_hidden}
+\begin{tabular}{clll}
+\toprule
+\textbf{model\_size} & \textbf{LLM} & \textbf{Linear layer} & \textbf{Total params} \\
+\midrule
+768  & Gemma (hidden=2304)   & $384 \to 2304$ & $\sim$6.0M \\
+768  & Qwen (hidden=2048)    & $384 \to 2048$ & $\sim$5.9M \\
+768  & LLaMA-3.2-3B (hidden=3072)& $384 \to 3072$ & $\sim$6.3M \\
+384  & Gemma (hidden=2304)   & $192 \to 2304$ & $\sim$1.9M \\
+1024 & Gemma (hidden=2304)   & $512 \to 2304$ & $\sim$10.1M \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We broadly perform three experiments on the adaptor stage:
+
+\begin{enumerate}
+    \item Grid search: Varying model\_size across 2 LLMs (and a comparison between 8 LLMs for fixed model\_size)
+    \item Ablation: Introducing ablations in training on 4 LLMs
+\end{enumerate}
+
+For the first study, we choose model\_size as 384, 768, and 1024. \citet{mohapatra2025} studies a 768 size, but we experiment with lower and higher values as we build our own dataset, and it would be worth understanding the effects of different adaptor sizes across other datasets of different sizes than Gaddy and Klein.
+
+For the ablation study, we introduce variations during training. Effects of changes such as cosine learning rate scheduling, gradient clipping, label smoothing, weight decay, data augmentation, layer normalisation, etc, are studied.
+
+Table~\ref{tab:grid_vs_ablation} depicts the types of changes we make in our study and which parts of the pipeline are affected when. The parameters of the adaptor layers (the first three rows of Table~\ref{tab:grid_vs_ablation}) are varied in the grid search study, while everything else remains the same. For the ablation study, we keep the adaptor constant and vary ablation parameters (next 7 rows).
+
+\begin{table}[ht]
+\centering
+\caption{Grid search vs.\ ablation: which parameters change in each study.}
+\label{tab:grid_vs_ablation}
+\begin{tabular}{lll}
+\toprule
+\textbf{Change} & \textbf{Grid search (model\_size)} & \textbf{Ablation (training recipe)} \\
+\midrule
+ResBlocks & Varies widths & Same (768/384/192) \\
+BiLSTM & Varies dimensions & Same (192$\to$384) \\
+Linear projection & Varies (MS//2$\to$llm\_hidden) & Same (384$\to$llm\_hidden) \\
+Dropout & Fixed at 0.15 & Varies (0 vs 0.15) \\
+LayerNorm & Fixed on & Varies (on vs off) \\
+LR schedule & Fixed cosine & Varies (constant vs cosine) \\
+Label smoothing & Fixed 0.1 & Varies (0 vs 0.1) \\
+Augmentation & Fixed on & Varies (off vs on) \\
+LLM mode & Fixed eval & Varies (train vs eval) \\
+Prompt at inference & Fixed on & Varies (off vs on) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Stage 3: Frozen LLM Decoding}
+
+This stage consist of a frozen LLM which maps the learned outputs of adaptor to words. The input embeddings are prepended by ``P1 = Unvoiced EMG:'' and appended by ``P2 = Prompt: Convert unvoiced EMG embeddings to text.'' These text embeddings are also converted to numbers using the LLM tokenizer having the mapping as $M : X_P \to H_P$, where $X_P = [P1, P2]$. On processing this through the LLM, we obtain the output embeddings for the EMG signals. These are the predicted logits $z_{t_s,y'}$ for each vocabulary item $y'$ at position $t_s$. Cross entropy loss is:
+
+\begin{equation}
+\mathcal{L} = -\sum_{t_s=1}^{T_s} \sum_{y' \in V} y'_{t_s} \log \left( \frac{\exp(z_{t_s,y'}/\tau)}{\sum_{v \in V} \exp(z_{t_s,v}/\tau)} \right),
+\end{equation}
+
+where $\tau$ is the temperature parameter and $y'_{t_s}$ is the true class at $t_s$. Figure~\ref{fig:pipeline_full} shows how the complete pipeline functions, where we concatenate embeddings of:
+
+\begin{itemize}
+    \item ``P1 = Unvoiced EMG:''
+    \item EMG signals (multi-channel)
+    \item ``P2 = Prompt: Convert unvoiced EMG embeddings to text.''
+\end{itemize}
+
+for the LLM to process. It outputs word embeddings which are then compared with the groundtruth word embeddings through cross-entropy loss, to output correct embeddings.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=\textwidth]{figures/image10.png}
+    \caption{Trainable EMG adapter with frozen LLMs to transcribe text. Taken from \citet{mohapatra2025}.}
+    \label{fig:pipeline_full}
+\end{figure}
+
+We experiment with training adaptors of model\_size = 768 for 8 different LLMs, including LLaMA-3.2-3B to establish a baseline for existing study \citet{mohapatra2025}. We also perform a grid search across 2 LLMs as a grid search for the best adaptor configuration.
+
+Grid search is performed for the following LLMs:
+
+\begin{enumerate}
+    \item Gemma-2-2b-it
+    \item Qwen2.5-3B
+\end{enumerate}
+
+Adaptors with model\_size = 768 are trained for the following LLMs:
+
+\begin{enumerate}
+    \item Gemma-2-2b-it
+    \item Phi-3-mini-4k
+    \item DeepSeek-R1-Distill-Qwen-1.5B
+    \item LiquidAI/LFM2.5-1.2B-Instruct
+    \item LLaMA-3.2-3B
+    \item Qwen2.5-3B
+    \item Stablelm-2-1\_6b-chat
+    \item SmolLM2-1.7B-Instruct
+\end{enumerate}
+
+Apart from the two broad studies mentioned above, we perform two further studies that help us close the existing research gap, as follows:
+
+\begin{enumerate}
+    \item Channel drop from 8 to 4 and 3 EMG channels: We study how channel drop from 8 channels (research-grade, used by Gaddy) to 4 and 3 channels (consumer-grade, economically feasible) impacts performance.
+    \item Custom dataset: While we experiment with train/test split on Gaddy dataset, we also collect our own data across two trials:
+    \begin{enumerate}
+        \item[i.] Same data as Gaddy (67-word date/time closed vocab)
+        \item[ii.] A new 10-word (consisting of phonetically distinct fruit names) closed vocab
+    \end{enumerate}
+\end{enumerate}
+
+Both studies use our best-performing LLM, the Gemma-2 model. We discuss them further in the next section.

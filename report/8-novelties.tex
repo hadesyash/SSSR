@@ -1,0 +1,31 @@
+\section{Project Novelties}
+
+The authors believe that they have made significant research contributions from the results obtained, alongside introducing several novelties, as listed below. Existing literature does not cover the following aspects:
+
+\begin{enumerate}
+    \item \textbf{Comparison of 8 LLMs:} We cover a wide range of LLMs with different capabilities and pre-training strategies (Table~\ref{tab:8llm_comparison}). For every LLM, we train an adaptor. \citet{mohapatra2025} only covers LLaMA-2-7B and LLaMA-3.2-3B and achieves a WER of 0.49. We improve this to 0.33 using Gemma-2. Prior EMG-to-text literature has not examined how frozen LLMs affect silent speech decoding.
+
+    \item \textbf{Ablation study:} We holistically evaluate training across 9 incremental ablations across 4 LLMs, showing which generalise and which are LLM-specific (Table~\ref{tab:ablation}).
+
+    \item \textbf{Consumer-grade EMG Hardware Validation:} Previous studies either use the Gaddy dataset only and do not perform custom dataset inference, or use research-grade electrodes. We make a sharp shift and collect both Gaddy-style data to test benchmarks and our own phonetically distinct data to establish new baselines.
+
+    \item \textbf{Channel reduction analysis:} No prior research work systematically studies the reduction in EMG channels. We develop a principled pipeline to select a number of channels based on variance, uniqueness, and energy of signals and validate it with data-loss metrics such as PCA, linear reconstructions, and cross-correlation (Tables~\ref{tab:channel_methods} and \ref{tab:channel_results}).
+\end{enumerate}
+
+Based on this, we aim to publish a research paper at an IEEE/ACM conference. UIST (ACM Symp.\ on User Interface Software and Tech) and ACM Multimedia (ACM MM) are some of the conferences we are targetting, with work on research paper writing having already been started.
+
+\section{Future Work}
+
+Several directions emerge naturally from this project and could strengthen both the system's practical utility and its research contributions.
+
+\paragraph{Larger and More Diverse Datasets.} Our personal dataset experiments were limited by sample size (438 and 757 utterances respectively) and number of participants. Collecting data from a larger cohort with multiple recording sessions per participant would enable a more rigorous evaluation of cross-session and cross-subject generalisation. Expanding the vocabulary beyond the closed 67-word set toward open-vocabulary decoding---potentially by leveraging the LLM's full generative capacity---remains a key long-term goal.
+
+\paragraph{Session-to-Session Calibration.} The inference gap observed in Trial~2 highlights the need for online adaptation techniques that can compensate for electrode placement drift between sessions. Approaches such as few-shot calibration, where a short re-recording session updates the adaptor's input normalisation, or test-time adaptation methods could significantly improve deployment robustness.
+
+\paragraph{Extended LLM and Adaptor Exploration.} While we compared 8 frozen LLMs, fine-tuning strategies such as LoRA \citep{mohapatra2025} were not explored in depth. Additionally, our ablation study was limited to 500 training epochs; extending training and applying learning rate warm-up or cyclical schedules may yield further improvements, particularly for the larger adaptor configurations.
+
+\paragraph{Channel Dropout Pre-training.} Inspired by \citet{hwang2026}, applying channel dropout during training on the full 8-channel Gaddy dataset before fine-tuning on 4 or 3 channels could improve reduced-channel performance beyond our current results, which train directly on the subset.
+
+\paragraph{Real-time Deployment.} Although we demonstrated a working Arduino-based data acquisition pipeline, end-to-end real-time inference---from EMG capture through feature extraction to LLM decoding---has not yet been optimised for latency. Deploying a quantised adaptor on edge hardware while streaming to a server-hosted LLM would be a practical next step toward a usable silent speech device.
+
+\paragraph{Publication.} We plan to prepare a 6--7 page paper for submission to an IEEE or ACM venue, consolidating the LLM comparison, ablation study, channel reduction analysis, and personal dataset results into a concise research contribution.
